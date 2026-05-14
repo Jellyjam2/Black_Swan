@@ -1,0 +1,7 @@
+[package]
+name = "black_swan_scheduler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+black_swan_state = { path = "../state" }

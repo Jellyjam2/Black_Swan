@@ -1,0 +1,21 @@
+[package]
+name = "black_swan_coordinator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+black_swan_state = { path = "../../crates/state" }
+black_swan_security = { path = "../../crates/security" }
+black_swan_transport = { path = "../../crates/transport" }
+black_swan_consensus = { path = "../../crates/consensus" }
+black_swan_scheduler = { path = "../../crates/scheduler" }
+
+tokio = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+ed25519-dalek = { workspace = true }
+
+rand = "0.8"
+
+black_swan_storage = { path = "../../crates/storage" }
