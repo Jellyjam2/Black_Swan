@@ -1,4 +1,35 @@
-target/
-node_a/
+# Rust
+/target/
+Cargo.lock.bak
+
+# Runtime storage
+/storage/
+/logs/
+/tmp/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+keys/
+
+# Local test artifacts
 *.log
-node_a
+*.db
+*.sqlite
+*.sqlite3

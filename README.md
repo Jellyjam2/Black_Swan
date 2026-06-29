@@ -1,11 +1,144 @@
-# Black Swan: Distributed Consensual State Machine Runtime
+# Black Swan
 
-An authenticated, write-ahead log (WAL) backed deterministic state machine runtime coordinator written in asynchronous Rust using Tokio.
+**Authenticated Distributed State Machine Runtime in Rust**
 
-### Current Project Milestone Status
-- [x] Ed25519 Cryptographic Trust Ingress Gate
-- [x] Bounded Asynchronous Ingestion Loop (Tokio)
-- [x] Write-Ahead Log (WAL) Crash-Safety & Recovery Replay Engine
-- [x] Deterministic State Machine Reducer & Immutable Projections
-- [ ] Multi-Node Raft Consensus Replication (AppendEntries RPC)
-- [ ] Log Compaction & Snapshot Trimming
+Black Swan is a Rust/Tokio runtime for authenticated commands, append-only WAL recovery, deterministic state transitions, and future Raft replication.
+
+It accepts signed commands, verifies sender identity and capability, rejects replayed or expired packets, writes accepted commands to an append-only write-ahead log, and applies them through a deterministic reducer.
+
+The goal is to build a small, auditable foundation for secure distributed coordination.
+
+---
+
+## Current Status
+
+Black Swan currently includes:
+
+- Ed25519-based ingress trust gate
+- Sender identity registry
+- Capability authorization
+- Timestamp validation
+- Replay protection
+- Length-delimited TCP transport
+- Append-only WAL persistence
+- Crash-recovery replay path
+- Deterministic state reducer
+- Raft role/log scaffold
+- Coordinator daemon prototype
+
+Planned next:
+
+- Monotonic WAL index and term handling
+- HashSet-based replay registry
+- Integration tests
+- Local demo extraction
+- AppendEntries RPC scaffold
+- Snapshot and log compaction
+
+---
+
+## Architecture
+
+```text
+signed packet
+     |
+     v
+transport/tcp
+     |
+     v
+security trust gate
+     |
+     v
+WAL append + fsync
+     |
+     v
+deterministic reducer
+     |
+     v
+immutable state view
+```
+
+Workspace layout:
+
+```text
+crates/state       deterministic commands and reducer
+crates/security    Ed25519 ingress verification and capability checks
+crates/transport   Tokio TCP framed packet transport
+crates/storage     append-only WAL and replay
+crates/consensus   Raft role/log scaffold
+crates/scheduler   execution scheduling contracts
+apps/coordinator   runtime daemon and local prototype harness
+```
+
+---
+
+## Why This Exists
+
+Distributed systems often fail because state changes are accepted too freely, logged too late, or replayed inconsistently.
+
+Black Swan experiments with a stricter flow:
+
+1. Authenticate the sender.
+2. Authorize the capability.
+3. Reject stale or replayed packets.
+4. Persist the command before applying it.
+5. Apply commands through a deterministic reducer.
+6. Prepare the system for replicated consensus.
+
+---
+
+## Running Locally
+
+```bash
+cargo build
+cargo run -p black_swan_coordinator
+```
+
+The current coordinator contains a local signed-packet harness that starts a listener, registers a test identity, signs a command, sends it over TCP, writes it to the WAL, and applies it to state.
+
+---
+
+## Roadmap
+
+### Phase 1 - Hardening
+
+- [ ] Replace string-based nonce registry with `HashSet`
+- [ ] Add TTL/window cleanup for replay protection
+- [ ] Add monotonic WAL index
+- [ ] Add real consensus term source
+- [ ] Move local packet test harness into `examples/`
+- [ ] Add integration tests for trust gate and WAL replay
+
+### Phase 2 - Replication
+
+- [ ] AppendEntries RPC types
+- [ ] Leader-to-follower replication path
+- [ ] Commit index advancement
+- [ ] Follower replay consistency checks
+
+### Phase 3 - Production Shape
+
+- [ ] Snapshot compaction
+- [ ] Structured config
+- [ ] Metrics and tracing
+- [ ] Threat model documentation
+- [ ] Release freeze script
+
+---
+
+## Good First Issues
+
+- Replace replay registry string storage with `HashSet<(sender_id, nonce)>`
+- Add WAL replay integration test
+- Add expired timestamp test
+- Add bad signature test
+- Add unauthorized capability test
+- Move local signed-packet harness from `main.rs` to `examples/`
+
+---
+
+## License
+
+License to be selected.
+
+Recommended: MIT or Apache-2.0 for open source adoption.
