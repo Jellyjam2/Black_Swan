@@ -107,6 +107,8 @@ cargo run -p black_swan_coordinator --example local_signed_packet_demo
 
 The demo starts a listener, registers a test identity, signs a command, sends it over TCP, writes it to the WAL, and applies it to state.
 
+Runtime configuration is controlled through local defaults or environment variables. See docs/RUNTIME_CONFIG.md and .env.example.
+
 
 ---
 
@@ -149,7 +151,7 @@ See `docs/TESTING.md` for the full testing contract.
 ### Phase 3 - Production Shape
 
 - [ ] Snapshot compaction
-- [ ] Structured config
+- [x] Structured config
 - [ ] Metrics and tracing
 - [ ] Threat model documentation
 - [ ] Release freeze script

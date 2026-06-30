@@ -1,8 +1,9 @@
+use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tokio::sync::{Mutex, Semaphore};
 
 use black_swan_security::{ActiveTrustGate, IngressTrustGate};
@@ -12,12 +13,61 @@ use black_swan_transport::{SecureTransportEngine, TokioTransportEngine};
 
 pub const CAPABILITY_EXEC: &str = "compute.execute";
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PipelineConfig {
+    pub node_id: String,
     pub listen_address: SocketAddr,
     pub max_concurrent_frames: usize,
     pub clock_skew_tolerance_secs: u64,
     pub current_term: u64,
+}
+
+impl PipelineConfig {
+    pub fn local_default() -> Result<Self> {
+        Ok(Self {
+            node_id: "node_a".to_string(),
+            listen_address: "127.0.0.1:9199"
+                .parse()
+                .context("invalid default listen address")?,
+            max_concurrent_frames: 512,
+            clock_skew_tolerance_secs: 30,
+            current_term: 1,
+        })
+    }
+
+    pub fn from_env() -> Result<Self> {
+        let mut config = Self::local_default()?;
+
+        if let Ok(value) = env::var("BLACK_SWAN_NODE_ID") {
+            config.node_id = value;
+        }
+
+        if let Ok(value) = env::var("BLACK_SWAN_LISTEN_ADDR") {
+            config.listen_address = value
+                .parse()
+                .with_context(|| format!("invalid BLACK_SWAN_LISTEN_ADDR: {value}"))?;
+        }
+
+        if let Ok(value) = env::var("BLACK_SWAN_MAX_CONCURRENT_FRAMES") {
+            config.max_concurrent_frames = value
+                .parse()
+                .with_context(|| format!("invalid BLACK_SWAN_MAX_CONCURRENT_FRAMES: {value}"))?;
+        }
+
+        if let Ok(value) = env::var("BLACK_SWAN_CLOCK_SKEW_SECS") {
+            config.clock_skew_tolerance_secs = value
+                .parse()
+                .with_context(|| format!("invalid BLACK_SWAN_CLOCK_SKEW_SECS: {value}"))?;
+        }
+
+        if let Ok(value) = env::var("BLACK_SWAN_CURRENT_TERM") {
+            config.current_term = value
+                .parse()
+                .with_context(|| format!("invalid BLACK_SWAN_CURRENT_TERM: {value}"))?;
+        }
+
+        Ok(config)
+    }
 }
 
 pub struct CoordinatorDaemon {
@@ -35,7 +85,7 @@ impl CoordinatorDaemon {
 
         let transport = Arc::new(TokioTransportEngine::new(config.listen_address));
         let trust_gate = Arc::new(ActiveTrustGate::new(config.clock_skew_tolerance_secs));
-        let wal = Arc::new(SharedWAL::new("node_a"));
+        let wal = Arc::new(SharedWAL::new(&config.node_id));
 
         Self {
             config,
@@ -48,6 +98,8 @@ impl CoordinatorDaemon {
     }
 
     pub async fn run_pipeline_kernel(&self) -> Result<()> {
+        println!("[KERNEL] Node ID: {}", self.config.node_id);
+        println!("[KERNEL] Current term: {}", self.config.current_term);
         println!("[KERNEL] WAL replay starting...");
 
         {
@@ -147,5 +199,21 @@ impl CoordinatorDaemon {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_local_safe() {
+        let config = PipelineConfig::local_default().unwrap();
+
+        assert_eq!(config.node_id, "node_a");
+        assert_eq!(config.listen_address.to_string(), "127.0.0.1:9199");
+        assert_eq!(config.max_concurrent_frames, 512);
+        assert_eq!(config.clock_skew_tolerance_secs, 30);
+        assert_eq!(config.current_term, 1);
     }
 }

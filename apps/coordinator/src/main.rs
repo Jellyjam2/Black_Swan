@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use anyhow::Result;
 use black_swan_coordinator::{CoordinatorDaemon, PipelineConfig};
 
@@ -7,14 +5,7 @@ use black_swan_coordinator::{CoordinatorDaemon, PipelineConfig};
 async fn main() -> Result<()> {
     println!("--- BLACK SWAN COORDINATOR DAEMON v3 ---");
 
-    let server_addr: SocketAddr = "127.0.0.1:9199".parse()?;
-
-    let config = PipelineConfig {
-        listen_address: server_addr,
-        max_concurrent_frames: 512,
-        clock_skew_tolerance_secs: 30,
-        current_term: 1,
-    };
+    let config = PipelineConfig::from_env()?;
 
     let daemon = CoordinatorDaemon::new(config);
 

@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -16,14 +15,8 @@ use black_swan_transport::{SecureTransportEngine, TokioTransportEngine};
 async fn main() -> Result<()> {
     println!("--- BLACK SWAN LOCAL SIGNED PACKET DEMO ---");
 
-    let server_addr: SocketAddr = "127.0.0.1:9199".parse()?;
-
-    let config = PipelineConfig {
-        listen_address: server_addr,
-        max_concurrent_frames: 512,
-        clock_skew_tolerance_secs: 30,
-        current_term: 1,
-    };
+    let config = PipelineConfig::local_default()?;
+    let server_addr = config.listen_address;
 
     let daemon = CoordinatorDaemon::new(config);
 

@@ -14,7 +14,7 @@
 - [ ] replay-window cleanup
 - [x] monotonic WAL indices
 - [ ] real term tracking
-- [ ] coordinator config file
+- [x] coordinator config file
 
 ## Phase 3 - Consensus
 
