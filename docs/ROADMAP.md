@@ -2,17 +2,17 @@
 
 ## Phase 1 - Repo Hardening
 
-- [ ] Add CI
-- [ ] Add security policy
-- [ ] Add architecture docs
-- [ ] Add WAL contract docs
-- [ ] Add integration tests
+- [x] Add CI
+- [x] Add security policy
+- [x] Add architecture docs
+- [x] Add WAL contract docs
+- [x] Add integration tests
 
 ## Phase 2 - Runtime Hardening
 
-- [ ] Structured nonce registry
+- [x] Structured nonce registry
 - [ ] replay-window cleanup
-- [ ] monotonic WAL indices
+- [x] monotonic WAL indices
 - [ ] real term tracking
 - [ ] coordinator config file
 

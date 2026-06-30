@@ -30,7 +30,6 @@ Black Swan currently includes:
 Planned next:
 
 - Consensus-backed term handling
-- Integration tests
 - AppendEntries RPC scaffold
 - Snapshot and log compaction
 
@@ -108,6 +107,25 @@ cargo run -p black_swan_coordinator --example local_signed_packet_demo
 
 The demo starts a listener, registers a test identity, signs a command, sends it over TCP, writes it to the WAL, and applies it to state.
 
+
+---
+
+## Testing
+
+Run all workspace tests:
+
+```bash
+cargo test --workspace
+```
+
+Run the local signed-packet demo:
+
+```bash
+cargo run -p black_swan_coordinator --example local_signed_packet_demo
+```
+
+See `docs/TESTING.md` for the full testing contract.
+
 ---
 
 ## Roadmap
@@ -119,7 +137,7 @@ The demo starts a listener, registers a test identity, signs a command, sends it
 - [x] Add monotonic WAL index
 - [ ] Add real consensus term source
 - [x] Move local packet test harness into `examples/`
-- [ ] Add integration tests for trust gate and WAL replay
+- [x] Add integration tests for trust gate and WAL replay
 
 ### Phase 2 - Replication
 
