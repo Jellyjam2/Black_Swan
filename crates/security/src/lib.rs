@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -52,12 +52,14 @@ pub struct ShardIdentity {
 // REGISTRIES
 // ==========================================================
 
+type ReplayKey = (String, u64);
+
 pub struct IdentityRegistry {
-    pub storage: Mutex<String>,
+    pub storage: Mutex<HashMap<String, ShardIdentity>>,
 }
 
 pub struct NonceRegistry {
-    pub storage: Mutex<String>,
+    pub storage: Mutex<HashSet<ReplayKey>>,
 }
 
 // ==========================================================
@@ -94,10 +96,10 @@ impl ActiveTrustGate {
     pub fn new(clock_skew_window_secs: u64) -> Self {
         Self {
             identities: IdentityRegistry {
-                storage: Mutex::new(String::from("{}")),
+                storage: Mutex::new(HashMap::new()),
             },
             seen_nonces: NonceRegistry {
-                storage: Mutex::new(String::from(" ")),
+                storage: Mutex::new(HashSet::new()),
             },
             clock_skew_window_secs,
         }
@@ -118,17 +120,12 @@ impl IngressTrustGate for ActiveTrustGate {
     ) {
         let mut guard = self.identities.storage.lock().await;
 
-        let mut current_map: HashMap<String, ShardIdentity> =
-            serde_json::from_str(&guard).unwrap_or_default();
-
         let new_shard = ShardIdentity {
             public_key_bytes: key.to_bytes().to_vec(),
             allowed_capabilities: allowed_caps,
         };
 
-        current_map.insert(identity_id, new_shard);
-
-        *guard = serde_json::to_string(&current_map).unwrap_or_default();
+        guard.insert(identity_id, new_shard);
     }
 
     async fn verify_and_authorize(
@@ -136,6 +133,8 @@ impl IngressTrustGate for ActiveTrustGate {
         packet: &WirePacket,
         required_cap: &str,
     ) -> Result<ValidatedPacket, SecurityError> {
+        let replay_key = (packet.sender_id.clone(), packet.nonce);
+
         // ======================================================
         // REPLAY CHECK
         // ======================================================
@@ -143,9 +142,7 @@ impl IngressTrustGate for ActiveTrustGate {
         {
             let nonce_guard = self.seen_nonces.storage.lock().await;
 
-            let lookup_token = format!(" {}-{} ", packet.sender_id, packet.nonce);
-
-            if nonce_guard.contains(&lookup_token) {
+            if nonce_guard.contains(&replay_key) {
                 return Err(SecurityError::ReplayDetected);
             }
         }
@@ -169,30 +166,26 @@ impl IngressTrustGate for ActiveTrustGate {
         }
 
         // ======================================================
-        // LOAD IDENTITIES
+        // LOAD IDENTITY
         // ======================================================
 
-        let identities_guard = self.identities.storage.lock().await;
+        let shard = {
+            let identities_guard = self.identities.storage.lock().await;
 
-        let current_map: HashMap<String, ShardIdentity> =
-            serde_json::from_str(&identities_guard).unwrap_or_default();
-
-        let shard = current_map
-            .get(&packet.sender_id)
-            .ok_or(SecurityError::UnknownIdentity)?;
+            identities_guard
+                .get(&packet.sender_id)
+                .cloned()
+                .ok_or(SecurityError::UnknownIdentity)?
+        };
 
         // ======================================================
         // CAPABILITY CHECK
         // ======================================================
 
-        let mut authorized = false;
-
-        for cap in &shard.allowed_capabilities {
-            if cap == required_cap {
-                authorized = true;
-                break;
-            }
-        }
+        let authorized = shard
+            .allowed_capabilities
+            .iter()
+            .any(|cap| cap == required_cap);
 
         if !authorized {
             return Err(SecurityError::UnauthorizedCapability);
@@ -249,14 +242,158 @@ impl IngressTrustGate for ActiveTrustGate {
         {
             let mut nonce_write = self.seen_nonces.storage.lock().await;
 
-            let lookup_token = format!(" {}-{} ", packet.sender_id, packet.nonce);
-
-            nonce_write.push_str(&lookup_token);
+            if !nonce_write.insert(replay_key) {
+                return Err(SecurityError::ReplayDetected);
+            }
         }
 
         Ok(ValidatedPacket {
             sender_id: packet.sender_id.clone(),
             payload: packet.raw_payload.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    const CAP_EXEC: &str = "compute.execute";
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    fn test_signing_key() -> SigningKey {
+        SigningKey::from_bytes(&[7u8; 32])
+    }
+
+    fn build_packet(
+        signing_key: &SigningKey,
+        sender_id: &str,
+        nonce: u64,
+        timestamp: u64,
+        payload: Vec<u8>,
+    ) -> WirePacket {
+        let mut msg = Vec::new();
+
+        msg.extend_from_slice(sender_id.as_bytes());
+        msg.extend_from_slice(&nonce.to_be_bytes());
+        msg.extend_from_slice(&timestamp.to_be_bytes());
+        msg.extend_from_slice(&payload);
+
+        let signature = signing_key.sign(&msg).to_bytes().to_vec();
+
+        WirePacket {
+            sender_id: sender_id.to_string(),
+            nonce,
+            timestamp,
+            raw_payload: payload,
+            signature,
+        }
+    }
+
+    async fn registered_gate(allowed_caps: Vec<String>) -> (ActiveTrustGate, SigningKey) {
+        let gate = ActiveTrustGate::new(30);
+        let signing_key = test_signing_key();
+        let public_key = signing_key.verifying_key();
+
+        gate.register_identity("worker_shard_01".into(), public_key, allowed_caps)
+            .await;
+
+        (gate, signing_key)
+    }
+
+    #[tokio::test]
+    async fn accepts_valid_packet_once() {
+        let (gate, signing_key) = registered_gate(vec![CAP_EXEC.into()]).await;
+
+        let packet = build_packet(
+            &signing_key,
+            "worker_shard_01",
+            1,
+            now_secs(),
+            b"{\"ok\":true}".to_vec(),
+        );
+
+        let result = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn rejects_replayed_nonce() {
+        let (gate, signing_key) = registered_gate(vec![CAP_EXEC.into()]).await;
+
+        let packet = build_packet(
+            &signing_key,
+            "worker_shard_01",
+            42,
+            now_secs(),
+            b"{\"ok\":true}".to_vec(),
+        );
+
+        let first = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+        assert!(first.is_ok());
+
+        let second = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+        assert_eq!(second.unwrap_err(), SecurityError::ReplayDetected);
+    }
+
+    #[tokio::test]
+    async fn rejects_expired_timestamp() {
+        let (gate, signing_key) = registered_gate(vec![CAP_EXEC.into()]).await;
+
+        let packet = build_packet(
+            &signing_key,
+            "worker_shard_01",
+            2,
+            now_secs() - 120,
+            b"{\"ok\":true}".to_vec(),
+        );
+
+        let result = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+
+        assert_eq!(result.unwrap_err(), SecurityError::ExpiredTimestamp);
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_signature() {
+        let (gate, signing_key) = registered_gate(vec![CAP_EXEC.into()]).await;
+
+        let mut packet = build_packet(
+            &signing_key,
+            "worker_shard_01",
+            3,
+            now_secs(),
+            b"{\"ok\":true}".to_vec(),
+        );
+
+        packet.raw_payload = b"{\"tampered\":true}".to_vec();
+
+        let result = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+
+        assert_eq!(result.unwrap_err(), SecurityError::SignatureMismatch);
+    }
+
+    #[tokio::test]
+    async fn rejects_unauthorized_capability() {
+        let (gate, signing_key) = registered_gate(vec!["storage.read".into()]).await;
+
+        let packet = build_packet(
+            &signing_key,
+            "worker_shard_01",
+            4,
+            now_secs(),
+            b"{\"ok\":true}".to_vec(),
+        );
+
+        let result = gate.verify_and_authorize(&packet, CAP_EXEC).await;
+
+        assert_eq!(result.unwrap_err(), SecurityError::UnauthorizedCapability);
     }
 }

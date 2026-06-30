@@ -28,7 +28,6 @@ Invalid packets are dropped and the peer connection is closed.
 
 ## Known Hardening Work
 
-- Replace string-based nonce tracking with a structured replay registry.
 - Add replay-window cleanup.
 - Persist registered identities outside process memory.
 - Add malformed packet tests.
