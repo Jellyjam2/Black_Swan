@@ -20,6 +20,73 @@ pub struct WalEntry {
 }
 
 // ======================================================
+// SNAPSHOT AND COMPACTION CONTRACTS
+// ======================================================
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotMetadata {
+    pub node_id: String,
+    pub last_included_index: usize,
+    pub last_included_term: u64,
+    pub state_hash: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionPolicy {
+    pub min_entries_to_keep: usize,
+    pub snapshot_after_entries: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LogCompactionPlan {
+    pub snapshot: SnapshotMetadata,
+    pub compact_through_index: usize,
+    pub retain_from_index: usize,
+}
+
+impl CompactionPolicy {
+    pub fn conservative_default() -> Self {
+        Self {
+            min_entries_to_keep: 128,
+            snapshot_after_entries: 1024,
+        }
+    }
+
+    pub fn should_snapshot(&self, entry_count: usize) -> bool {
+        entry_count >= self.snapshot_after_entries
+    }
+}
+
+pub fn build_compaction_plan(
+    node_id: impl Into<String>,
+    entries: &[WalEntry],
+    policy: &CompactionPolicy,
+    state_hash: impl Into<String>,
+) -> Option<LogCompactionPlan> {
+    if entries.is_empty() || !policy.should_snapshot(entries.len()) {
+        return None;
+    }
+
+    let retain_from_position = entries.len().saturating_sub(policy.min_entries_to_keep);
+    let snapshot_position = retain_from_position.saturating_sub(1);
+    let snapshot_entry = &entries[snapshot_position];
+
+    Some(LogCompactionPlan {
+        snapshot: SnapshotMetadata {
+            node_id: node_id.into(),
+            last_included_index: snapshot_entry.index,
+            last_included_term: snapshot_entry.term,
+            state_hash: state_hash.into(),
+        },
+        compact_through_index: snapshot_entry.index,
+        retain_from_index: entries
+            .get(retain_from_position)
+            .map(|entry| entry.index)
+            .unwrap_or(snapshot_entry.index.saturating_add(1)),
+    })
+}
+
+// ======================================================
 // DISK WAL STORAGE ENGINE
 // ======================================================
 
@@ -216,5 +283,41 @@ mod tests {
         assert_eq!(modern.index, 2);
 
         let _ = remove_dir_all(PathBuf::from("storage").join(node_id));
+    }
+
+    #[test]
+    fn compaction_policy_waits_until_threshold() {
+        let policy = CompactionPolicy {
+            min_entries_to_keep: 2,
+            snapshot_after_entries: 5,
+        };
+
+        assert!(!policy.should_snapshot(4));
+        assert!(policy.should_snapshot(5));
+    }
+
+    #[test]
+    fn compaction_plan_preserves_tail_entries() {
+        let entries: Vec<WalEntry> = (0..6)
+            .map(|idx| WalEntry {
+                index: idx,
+                term: 1,
+                command: submit_graph(&format!("g{idx}")),
+            })
+            .collect();
+
+        let policy = CompactionPolicy {
+            min_entries_to_keep: 2,
+            snapshot_after_entries: 5,
+        };
+
+        let plan = build_compaction_plan("node_test", &entries, &policy, "hash123").unwrap();
+
+        assert_eq!(plan.snapshot.node_id, "node_test");
+        assert_eq!(plan.snapshot.last_included_index, 3);
+        assert_eq!(plan.snapshot.last_included_term, 1);
+        assert_eq!(plan.snapshot.state_hash, "hash123");
+        assert_eq!(plan.compact_through_index, 3);
+        assert_eq!(plan.retain_from_index, 4);
     }
 }

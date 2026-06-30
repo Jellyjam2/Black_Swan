@@ -31,7 +31,7 @@ Planned next:
 
 - Consensus-backed term handling
 - Leader heartbeat and transport wiring
-- Snapshot and log compaction
+- Release v0.1.0 tag
 
 ---
 
@@ -150,7 +150,7 @@ See `docs/TESTING.md` for the full testing contract.
 
 ### Phase 3 - Production Shape
 
-- [ ] Snapshot compaction
+- [x] Snapshot compaction design
 - [x] Structured config
 - [ ] Metrics and tracing
 - [ ] Threat model documentation

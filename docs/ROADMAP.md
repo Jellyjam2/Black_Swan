@@ -26,8 +26,8 @@
 
 ## Phase 4 - Production Shape
 
-- [ ] snapshots
-- [ ] log compaction
+- [x] snapshot metadata contract
+- [x] log compaction planning contract
 - [ ] tracing
 - [ ] metrics
 - [ ] release checklist
