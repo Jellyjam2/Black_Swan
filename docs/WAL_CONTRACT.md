@@ -14,6 +14,19 @@ Each WAL entry contains:
 - term
 - command
 
+## Monotonic Index
+
+New commands are appended through `append_command`.
+
+That method derives the next WAL index from the existing log before writing the new entry.
+
+For compatibility with early prototype logs that used repeated `index = 0`, the next index uses the larger value of:
+
+1. last stored index + 1
+2. replayed entry count
+
+This prevents newly accepted commands from reusing old indexes.
+
 ## Recovery
 
 On startup:
@@ -25,10 +38,10 @@ On startup:
 
 ## Current Limitation
 
-The current coordinator prototype uses fixed index and term values.
+The coordinator now assigns monotonic WAL indexes, but the term is still provided by runtime configuration.
 
-Next hardening step:
+Next hardening steps:
 
-- assign monotonic index
 - connect term to consensus state
 - reject corrupted or out-of-order WAL entries
+- add snapshot and log compaction

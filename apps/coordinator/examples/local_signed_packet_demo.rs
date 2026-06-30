@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
         listen_address: server_addr,
         max_concurrent_frames: 512,
         clock_skew_tolerance_secs: 30,
+        current_term: 1,
     };
 
     let daemon = CoordinatorDaemon::new(config);

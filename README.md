@@ -29,7 +29,7 @@ Black Swan currently includes:
 
 Planned next:
 
-- Monotonic WAL index and term handling
+- Consensus-backed term handling
 - Integration tests
 - AppendEntries RPC scaffold
 - Snapshot and log compaction
@@ -116,7 +116,7 @@ The demo starts a listener, registers a test identity, signs a command, sends it
 
 - [x] Replace string-based nonce registry with `HashSet`
 - [ ] Add TTL/window cleanup for replay protection
-- [ ] Add monotonic WAL index
+- [x] Add monotonic WAL index
 - [ ] Add real consensus term source
 - [x] Move local packet test harness into `examples/`
 - [ ] Add integration tests for trust gate and WAL replay

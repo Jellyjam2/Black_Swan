@@ -60,6 +60,38 @@ impl DiskWAL {
     }
 
     // --------------------------------------------------
+    // APPEND COMMAND WITH MONOTONIC INDEX
+    // --------------------------------------------------
+    pub fn append_command(&self, term: u64, command: LogCommand) -> Result<WalEntry, String> {
+        let entry = WalEntry {
+            index: self.next_index()?,
+            term,
+            command,
+        };
+
+        self.append(&entry)?;
+
+        Ok(entry)
+    }
+
+    // --------------------------------------------------
+    // NEXT LOG INDEX
+    // --------------------------------------------------
+    pub fn next_index(&self) -> Result<usize, String> {
+        let entries = self.replay()?;
+
+        let next_from_last_entry = entries
+            .last()
+            .map(|entry| entry.index.saturating_add(1))
+            .unwrap_or(0);
+
+        // Legacy WAL files from early prototypes may contain repeated index=0
+        // entries. The length fallback prevents new appends from reusing an old
+        // index when replaying those early files.
+        Ok(next_from_last_entry.max(entries.len()))
+    }
+
+    // --------------------------------------------------
     // REPLAY ENTIRE LOG ON STARTUP
     // --------------------------------------------------
     pub fn replay(&self) -> Result<Vec<WalEntry>, String> {
@@ -106,5 +138,83 @@ impl SharedWAL {
         Self {
             inner: Arc::new(RwLock::new(DiskWAL::new(node_id))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::remove_dir_all;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn unique_node_id(prefix: &str) -> String {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        format!("{prefix}_{stamp}")
+    }
+
+    fn submit_graph(graph_id: &str) -> LogCommand {
+        LogCommand::SubmitGraph {
+            graph_id: graph_id.to_string(),
+            payload: "{\"nodes\":[]}".to_string(),
+        }
+    }
+
+    #[test]
+    fn append_command_assigns_monotonic_indices() {
+        let node_id = unique_node_id("wal_monotonic");
+        let wal = DiskWAL::new(&node_id);
+
+        let first = wal.append_command(1, submit_graph("g1")).unwrap();
+        let second = wal.append_command(1, submit_graph("g2")).unwrap();
+        let third = wal.append_command(2, submit_graph("g3")).unwrap();
+
+        assert_eq!(first.index, 0);
+        assert_eq!(second.index, 1);
+        assert_eq!(third.index, 2);
+        assert_eq!(third.term, 2);
+
+        let replayed = wal.replay().unwrap();
+
+        assert_eq!(replayed.len(), 3);
+        assert_eq!(replayed[0].index, 0);
+        assert_eq!(replayed[1].index, 1);
+        assert_eq!(replayed[2].index, 2);
+
+        let _ = remove_dir_all(PathBuf::from("storage").join(node_id));
+    }
+
+    #[test]
+    fn next_index_handles_legacy_repeated_zero_entries() {
+        let node_id = unique_node_id("wal_legacy");
+        let wal = DiskWAL::new(&node_id);
+
+        wal.append(&WalEntry {
+            index: 0,
+            term: 0,
+            command: submit_graph("legacy_a"),
+        })
+        .unwrap();
+
+        wal.append(&WalEntry {
+            index: 0,
+            term: 0,
+            command: submit_graph("legacy_b"),
+        })
+        .unwrap();
+
+        let next = wal.next_index().unwrap();
+
+        assert_eq!(next, 2);
+
+        let modern = wal.append_command(1, submit_graph("modern")).unwrap();
+
+        assert_eq!(modern.index, 2);
+
+        let _ = remove_dir_all(PathBuf::from("storage").join(node_id));
     }
 }

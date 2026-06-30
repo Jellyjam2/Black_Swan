@@ -7,7 +7,7 @@ use tokio::sync::{Mutex, Semaphore};
 
 use black_swan_security::{ActiveTrustGate, IngressTrustGate};
 use black_swan_state::{LogCommand, PureState, StateMachineReducer};
-use black_swan_storage::{SharedWAL, WalEntry};
+use black_swan_storage::SharedWAL;
 use black_swan_transport::{SecureTransportEngine, TokioTransportEngine};
 
 pub const CAPABILITY_EXEC: &str = "compute.execute";
@@ -17,6 +17,7 @@ pub struct PipelineConfig {
     pub listen_address: SocketAddr,
     pub max_concurrent_frames: usize,
     pub clock_skew_tolerance_secs: u64,
+    pub current_term: u64,
 }
 
 pub struct CoordinatorDaemon {
@@ -73,6 +74,7 @@ impl CoordinatorDaemon {
         let state_ref = self.state_machine.clone();
         let semaphore_ref = self.concurrency_gate.clone();
         let wal_ref = self.wal.clone();
+        let current_term = self.config.current_term;
 
         tokio::spawn(async move {
             while let Some((peer_addr, wire_packet)) = transport_ref.recv_packet().await {
@@ -105,20 +107,22 @@ impl CoordinatorDaemon {
                                         start.elapsed().as_micros()
                                     );
 
-                                    let entry = WalEntry {
-                                        index: 0,
-                                        term: 0,
-                                        command: cmd.clone(),
-                                    };
-
-                                    {
+                                    let appended_entry = {
                                         let wal_guard = wal_clone.inner.write().await;
 
-                                        if let Err(e) = wal_guard.append(&entry) {
-                                            eprintln!("[FATAL WAL ERROR] {e}");
-                                            std::process::exit(1);
+                                        match wal_guard.append_command(current_term, cmd.clone()) {
+                                            Ok(entry) => entry,
+                                            Err(e) => {
+                                                eprintln!("[FATAL WAL ERROR] {e}");
+                                                std::process::exit(1);
+                                            }
                                         }
-                                    }
+                                    };
+
+                                    println!(
+                                        "[WAL] appended index={} term={}",
+                                        appended_entry.index, appended_entry.term
+                                    );
 
                                     let mut state_guard = state_clone.lock().await;
                                     state_guard.apply(&cmd);
