@@ -1,5 +1,5 @@
 use std::fs::{create_dir_all, OpenOptions};
-use std::io::{Write, BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -44,8 +44,7 @@ impl DiskWAL {
     // APPEND ENTRY (WRITE-AHEAD LOG RULE)
     // --------------------------------------------------
     pub fn append(&self, entry: &WalEntry) -> Result<(), String> {
-        let serialized = serde_json::to_string(entry)
-            .map_err(|e| format!("SERIALIZE_ERR: {e}"))?;
+        let serialized = serde_json::to_string(entry).map_err(|e| format!("SERIALIZE_ERR: {e}"))?;
 
         let mut file = OpenOptions::new()
             .create(true)
@@ -53,11 +52,9 @@ impl DiskWAL {
             .open(&self.file_path)
             .map_err(|e| format!("OPEN_ERR: {e}"))?;
 
-        writeln!(file, "{serialized}")
-            .map_err(|e| format!("WRITE_ERR: {e}"))?;
+        writeln!(file, "{serialized}").map_err(|e| format!("WRITE_ERR: {e}"))?;
 
-        file.sync_all()
-            .map_err(|e| format!("FSYNC_ERR: {e}"))?;
+        file.sync_all().map_err(|e| format!("FSYNC_ERR: {e}"))?;
 
         Ok(())
     }
@@ -86,8 +83,8 @@ impl DiskWAL {
                 continue;
             }
 
-            let entry: WalEntry = serde_json::from_str(&line)
-                .map_err(|e| format!("DESERIALIZE_ERR: {e}"))?;
+            let entry: WalEntry =
+                serde_json::from_str(&line).map_err(|e| format!("DESERIALIZE_ERR: {e}"))?;
 
             entries.push(entry);
         }

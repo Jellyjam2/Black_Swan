@@ -76,31 +76,18 @@ pub trait StateMachineReducer {
 impl StateMachineReducer for PureState {
     fn apply(&mut self, cmd: &LogCommand) {
         match cmd {
-            LogCommand::SubmitGraph {
-                graph_id,
-                payload,
-            } => {
-                self.active_graphs.insert(
-                    graph_id.clone(),
-                    payload.clone(),
-                );
+            LogCommand::SubmitGraph { graph_id, payload } => {
+                self.active_graphs.insert(graph_id.clone(), payload.clone());
             }
 
             LogCommand::DispatchTask {
-                node_id,
-                shard_id,
-                ..
+                node_id, shard_id, ..
             } => {
-                self.running_allocations.insert(
-                    node_id.clone(),
-                    shard_id.clone(),
-                );
+                self.running_allocations
+                    .insert(node_id.clone(), shard_id.clone());
             }
 
-            LogCommand::CompleteTask {
-                node_id,
-                ..
-            } => {
+            LogCommand::CompleteTask { node_id, .. } => {
                 self.running_allocations.remove(node_id);
             }
         }

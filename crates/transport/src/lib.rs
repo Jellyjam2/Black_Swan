@@ -11,7 +11,7 @@ use serde_json;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
-use tokio_util::codec::{LengthDelimitedCodec, Framed};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use black_swan_security::WirePacket;
 
@@ -78,16 +78,21 @@ impl TokioTransportEngine {
         tokio::spawn(async move {
             while let Ok((stream, peer_addr)) = listener.accept().await {
                 let (tx, rx) = mpsc::channel::<NetworkMessage>(256);
-                
+
                 // Mount tracking map immediately to handle duplex events
                 connections_ref.write().await.insert(peer_addr, tx);
-                
+
                 let ingress_clone = ingress_tx_ref.clone();
                 let connections_clone = connections_ref.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_socket_lifecycle(stream, peer_addr, rx, ingress_clone).await {
-                        eprintln!("[TRANSPORT WARNING] Connection closed with {} due to: {:?}", peer_addr, e);
+                    if let Err(e) =
+                        Self::handle_socket_lifecycle(stream, peer_addr, rx, ingress_clone).await
+                    {
+                        eprintln!(
+                            "[TRANSPORT WARNING] Connection closed with {} due to: {:?}",
+                            peer_addr, e
+                        );
                     }
                     connections_clone.write().await.remove(&peer_addr);
                 });
@@ -113,7 +118,7 @@ impl TokioTransportEngine {
                     let raw_bytes = serde_json::to_vec(&msg)?;
                     framed.send(Bytes::from(raw_bytes)).await?;
                 }
-                
+
                 // Handle inbound queue reads from the physical socket
                 res = framed.next() => {
                     match res {
@@ -154,7 +159,12 @@ impl SecureTransportEngine for TokioTransportEngine {
                 Ok(s) => break s,
                 Err(e) => {
                     attempts += 1;
-                    if attempts >= 3 { return Err(anyhow!("TRANSPORT_ERR: Target unreached after retries: {}", e)); }
+                    if attempts >= 3 {
+                        return Err(anyhow!(
+                            "TRANSPORT_ERR: Target unreached after retries: {}",
+                            e
+                        ));
+                    }
                     sleep(delay).await;
                     delay *= 2;
                 }
@@ -178,11 +188,14 @@ impl SecureTransportEngine for TokioTransportEngine {
     async fn send_packet(&self, target: ConnectionId, packet: WirePacket) -> Result<()> {
         let guard = self.connections.read().await;
         if let Some(tx) = guard.get(&target) {
-            tx.send(NetworkMessage::Payload(packet)).await
+            tx.send(NetworkMessage::Payload(packet))
+                .await
                 .map_err(|_| anyhow!("TRANSPORT_ERR: Channel write failed"))?;
             Ok(())
         } else {
-            Err(anyhow!("TRANSPORT_ERR: Active connection route non-existent"))
+            Err(anyhow!(
+                "TRANSPORT_ERR: Active connection route non-existent"
+            ))
         }
     }
 

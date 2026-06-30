@@ -10,8 +10,8 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::sleep;
 
 // Workspace contracts
-use black_swan_state::{LogCommand, PureState, StateMachineReducer};
 use black_swan_security::{ActiveTrustGate, IngressTrustGate, WirePacket};
+use black_swan_state::{LogCommand, PureState, StateMachineReducer};
 use black_swan_storage::{SharedWAL, WalEntry};
 use black_swan_transport::{SecureTransportEngine, TokioTransportEngine};
 
@@ -49,28 +49,18 @@ impl CoordinatorDaemon {
     pub fn new(config: PipelineConfig) -> Self {
         let max_frames = config.max_concurrent_frames;
 
-        let transport = Arc::new(
-            TokioTransportEngine::new(config.listen_address)
-        );
+        let transport = Arc::new(TokioTransportEngine::new(config.listen_address));
 
-        let trust_gate = Arc::new(
-            ActiveTrustGate::new(config.clock_skew_tolerance_secs)
-        );
+        let trust_gate = Arc::new(ActiveTrustGate::new(config.clock_skew_tolerance_secs));
 
-        let wal = Arc::new(
-            SharedWAL::new("node_a")
-        );
+        let wal = Arc::new(SharedWAL::new("node_a"));
 
         Self {
             config,
             transport,
             trust_gate,
-            state_machine: Arc::new(
-                Mutex::new(PureState::default())
-            ),
-            concurrency_gate: Arc::new(
-                Semaphore::new(max_frames)
-            ),
+            state_machine: Arc::new(Mutex::new(PureState::default())),
+            concurrency_gate: Arc::new(Semaphore::new(max_frames)),
             wal,
         }
     }
@@ -85,35 +75,26 @@ impl CoordinatorDaemon {
 
             let wal_guard = self.wal.inner.read().await;
 
-            let history = wal_guard
-                .replay()
-                .unwrap_or_default();
+            let history = wal_guard.replay().unwrap_or_default();
 
             drop(wal_guard);
 
             let recovered_count = history.len();
 
-            let mut state_guard =
-                self.state_machine.lock().await;
+            let mut state_guard = self.state_machine.lock().await;
 
             for entry in history {
                 state_guard.apply(&entry.command);
             }
 
-            println!(
-                "[KERNEL] WAL replay complete. entries={}",
-                recovered_count
-            );
+            println!("[KERNEL] WAL replay complete. entries={}", recovered_count);
         }
 
         // ----------------------------------------------------------
         // START NETWORK LISTENER
         // ----------------------------------------------------------
 
-        println!(
-            "[KERNEL] Listening on {}",
-            self.config.listen_address
-        );
+        println!("[KERNEL] Listening on {}", self.config.listen_address);
 
         self.transport.run_listener().await?;
 
@@ -128,14 +109,8 @@ impl CoordinatorDaemon {
         // ----------------------------------------------------------
 
         tokio::spawn(async move {
-            while let Some((peer_addr, wire_packet)) =
-                transport_ref.recv_packet().await
-            {
-                let permit = match semaphore_ref
-                    .clone()
-                    .acquire_owned()
-                    .await
-                {
+            while let Some((peer_addr, wire_packet)) = transport_ref.recv_packet().await {
+                let permit = match semaphore_ref.clone().acquire_owned().await {
                     Ok(p) => p,
                     Err(_) => break,
                 };
@@ -149,18 +124,13 @@ impl CoordinatorDaemon {
                     let start = Instant::now();
 
                     let validation_result = gate_clone
-                        .verify_and_authorize(
-                            &wire_packet,
-                            CAPABILITY_EXEC,
-                        )
+                        .verify_and_authorize(&wire_packet, CAPABILITY_EXEC)
                         .await;
 
                     match validation_result {
                         Ok(validated) => {
                             let command_parse =
-                                serde_json::from_slice::<LogCommand>(
-                                    &validated.payload,
-                                );
+                                serde_json::from_slice::<LogCommand>(&validated.payload);
 
                             match command_parse {
                                 Ok(cmd) => {
@@ -184,16 +154,10 @@ impl CoordinatorDaemon {
                                     // ----------------------------------
 
                                     {
-                                        let wal_guard =
-                                            wal_clone.inner.write().await;
+                                        let wal_guard = wal_clone.inner.write().await;
 
-                                        if let Err(e) =
-                                            wal_guard.append(&entry)
-                                        {
-                                            eprintln!(
-                                                "[FATAL WAL ERROR] {}",
-                                                e
-                                            );
+                                        if let Err(e) = wal_guard.append(&entry) {
+                                            eprintln!("[FATAL WAL ERROR] {}", e);
 
                                             std::process::exit(1);
                                         }
@@ -203,31 +167,21 @@ impl CoordinatorDaemon {
                                     // APPLY STATE
                                     // ----------------------------------
 
-                                    let mut state_guard =
-                                        state_clone.lock().await;
+                                    let mut state_guard = state_clone.lock().await;
 
                                     state_guard.apply(&cmd);
                                 }
 
                                 Err(parse_err) => {
-                                    eprintln!(
-                                        "[INVALID COMMAND PAYLOAD] {:?}",
-                                        parse_err
-                                    );
+                                    eprintln!("[INVALID COMMAND PAYLOAD] {:?}", parse_err);
                                 }
                             }
                         }
 
                         Err(err) => {
-                            eprintln!(
-                                "[SECURITY DROP] peer={:?} reason={:?}",
-                                peer_addr,
-                                err
-                            );
+                            eprintln!("[SECURITY DROP] peer={:?} reason={:?}", peer_addr, err);
 
-                            transport_clone
-                                .close_connection(peer_addr)
-                                .await;
+                            transport_clone.close_connection(peer_addr).await;
                         }
                     }
 
@@ -246,12 +200,9 @@ impl CoordinatorDaemon {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!(
-        "--- BLACK SWAN PIPELINE v3 (WAL + CONSENSUS READY) ---"
-    );
+    println!("--- BLACK SWAN PIPELINE v3 (WAL + CONSENSUS READY) ---");
 
-    let server_addr: SocketAddr =
-        "127.0.0.1:9199".parse()?;
+    let server_addr: SocketAddr = "127.0.0.1:9199".parse()?;
 
     let config = PipelineConfig {
         listen_address: server_addr,
@@ -275,15 +226,13 @@ async fn main() -> Result<()> {
 
     csprng.fill_bytes(&mut secret_key);
 
-    let signing_key =
-        SigningKey::from_bytes(&secret_key);
+    let signing_key = SigningKey::from_bytes(&secret_key);
 
     // --------------------------------------------------------------
     // REGISTER TRUST IDENTITY
     // --------------------------------------------------------------
 
-    let public_key =
-        signing_key.verifying_key();
+    let public_key = signing_key.verifying_key();
 
     daemon
         .trust_gate
@@ -303,28 +252,19 @@ async fn main() -> Result<()> {
         payload: "{\"nodes\":[]}".into(),
     };
 
-    let payload =
-        serde_json::to_vec(&mock_cmd)?;
+    let payload = serde_json::to_vec(&mock_cmd)?;
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs();
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
     let nonce = 42u64;
 
     let mut msg = Vec::new();
 
-    msg.extend_from_slice(
-        b"worker_shard_01"
-    );
+    msg.extend_from_slice(b"worker_shard_01");
 
-    msg.extend_from_slice(
-        &nonce.to_be_bytes()
-    );
+    msg.extend_from_slice(&nonce.to_be_bytes());
 
-    msg.extend_from_slice(
-        &timestamp.to_be_bytes()
-    );
+    msg.extend_from_slice(&timestamp.to_be_bytes());
 
     msg.extend_from_slice(&payload);
 
@@ -332,10 +272,7 @@ async fn main() -> Result<()> {
     // SIGN PACKET
     // --------------------------------------------------------------
 
-    let signature = signing_key
-        .sign(&msg)
-        .to_bytes()
-        .to_vec();
+    let signature = signing_key.sign(&msg).to_bytes().to_vec();
 
     let packet = WirePacket {
         sender_id: "worker_shard_01".into(),
@@ -349,17 +286,11 @@ async fn main() -> Result<()> {
     // SEND PACKET
     // --------------------------------------------------------------
 
-    let client = TokioTransportEngine::new(
-        "127.0.0.1:9200".parse()?
-    );
+    let client = TokioTransportEngine::new("127.0.0.1:9200".parse()?);
 
-    let route = client
-        .open_connection(server_addr)
-        .await?;
+    let route = client.open_connection(server_addr).await?;
 
-    client
-        .send_packet(route, packet)
-        .await?;
+    client.send_packet(route, packet).await?;
 
     sleep(Duration::from_millis(150)).await;
 
@@ -367,8 +298,7 @@ async fn main() -> Result<()> {
     // VERIFY STATE
     // --------------------------------------------------------------
 
-    let state =
-        daemon.state_machine.lock().await;
+    let state = daemon.state_machine.lock().await;
 
     let view = state.create_view();
 

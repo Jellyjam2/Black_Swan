@@ -41,14 +41,9 @@ pub struct ConsensusStatus {
 
 #[async_trait]
 pub trait RaftConsensusController: Send + Sync {
-    async fn propose_entry(
-        &mut self,
-        cmd: LogCommand,
-    ) -> Result<usize, String>;
+    async fn propose_entry(&mut self, cmd: LogCommand) -> Result<usize, String>;
 
-    async fn step_heartbeat_clock(
-        &mut self,
-    ) -> Result<(), String>;
+    async fn step_heartbeat_clock(&mut self) -> Result<(), String>;
 
     fn get_status(&self) -> ConsensusStatus;
 
@@ -69,10 +64,7 @@ pub struct ActiveRaftEngine {
 }
 
 impl ActiveRaftEngine {
-    pub fn new(
-        initial_term: u64,
-        peer_count: usize,
-    ) -> Self {
+    pub fn new(initial_term: u64, peer_count: usize) -> Self {
         Self {
             current_term: initial_term,
             commit_index: 0,
@@ -80,18 +72,16 @@ impl ActiveRaftEngine {
             role: RaftRole::Follower,
 
             // Bootstrap-safe sentinel entry
-            log: vec![
-                RaftLogEntry {
-                    term: 0,
-                    index: 0,
-                    command: LogCommand::CompleteTask {
-                        graph_id: String::new(),
-                        node_id: String::new(),
-                        output: String::new(),
-                        success: true,
-                    },
-                }
-            ],
+            log: vec![RaftLogEntry {
+                term: 0,
+                index: 0,
+                command: LogCommand::CompleteTask {
+                    graph_id: String::new(),
+                    node_id: String::new(),
+                    output: String::new(),
+                    success: true,
+                },
+            }],
 
             peer_count,
         }
@@ -104,14 +94,9 @@ impl ActiveRaftEngine {
 
 #[async_trait]
 impl RaftConsensusController for ActiveRaftEngine {
-    async fn propose_entry(
-        &mut self,
-        cmd: LogCommand,
-    ) -> Result<usize, String> {
+    async fn propose_entry(&mut self, cmd: LogCommand) -> Result<usize, String> {
         if self.role != RaftRole::Leader {
-            return Err(
-                "REJECTION: Node is not Leader.".into()
-            );
+            return Err("REJECTION: Node is not Leader.".into());
         }
 
         let next_index = self.log.len();
@@ -132,9 +117,7 @@ impl RaftConsensusController for ActiveRaftEngine {
         Ok(next_index)
     }
 
-    async fn step_heartbeat_clock(
-        &mut self,
-    ) -> Result<(), String> {
+    async fn step_heartbeat_clock(&mut self) -> Result<(), String> {
         if self.role == RaftRole::Candidate {
             self.role = RaftRole::Leader;
         }

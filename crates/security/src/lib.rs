@@ -143,8 +143,7 @@ impl IngressTrustGate for ActiveTrustGate {
         {
             let nonce_guard = self.seen_nonces.storage.lock().await;
 
-            let lookup_token =
-                format!(" {}-{} ", packet.sender_id, packet.nonce);
+            let lookup_token = format!(" {}-{} ", packet.sender_id, packet.nonce);
 
             if nonce_guard.contains(&lookup_token) {
                 return Err(SecurityError::ReplayDetected);
@@ -233,8 +232,7 @@ impl IngressTrustGate for ActiveTrustGate {
             .map_err(|_| SecurityError::UnknownIdentity)?;
 
         let verified_public_key =
-            PublicKey::from_bytes(&pk_bytes)
-                .map_err(|_| SecurityError::UnknownIdentity)?;
+            PublicKey::from_bytes(&pk_bytes).map_err(|_| SecurityError::UnknownIdentity)?;
 
         // ======================================================
         // VERIFY SIGNATURE
@@ -251,8 +249,7 @@ impl IngressTrustGate for ActiveTrustGate {
         {
             let mut nonce_write = self.seen_nonces.storage.lock().await;
 
-            let lookup_token =
-                format!(" {}-{} ", packet.sender_id, packet.nonce);
+            let lookup_token = format!(" {}-{} ", packet.sender_id, packet.nonce);
 
             nonce_write.push_str(&lookup_token);
         }
