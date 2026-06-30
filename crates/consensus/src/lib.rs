@@ -155,9 +155,7 @@ impl ActiveRaftEngine {
             return self.rejection(request.prev_log_index, "PREV_LOG_TERM_MISMATCH");
         }
 
-        let mut expected_index = request.prev_log_index + 1;
-
-        for entry in request.entries {
+        for (expected_index, entry) in (request.prev_log_index + 1..).zip(request.entries) {
             if entry.index != expected_index {
                 return self.rejection(self.last_log_index(), "NON_CONTIGUOUS_APPEND");
             }
@@ -172,8 +170,6 @@ impl ActiveRaftEngine {
             } else {
                 return self.rejection(self.last_log_index(), "LOG_GAP");
             }
-
-            expected_index += 1;
         }
 
         if request.leader_commit > self.commit_index {

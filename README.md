@@ -31,7 +31,7 @@ Planned next:
 
 - Consensus-backed term handling
 - Leader heartbeat and transport wiring
-- Release v0.1.0 tag
+- Consensus-owned term source
 
 ---
 
@@ -128,6 +128,25 @@ cargo run -p black_swan_coordinator --example local_signed_packet_demo
 
 See `docs/TESTING.md` for the full testing contract.
 
+
+---
+
+## Release
+
+Current release target:
+
+```text
+v0.1.0 - Foundation Release
+```
+
+See:
+
+```text
+CHANGELOG.md
+RELEASE_NOTES_v0.1.0.md
+docs/RELEASE_CHECKLIST.md
+```
+
 ---
 
 ## Roadmap
@@ -154,7 +173,7 @@ See `docs/TESTING.md` for the full testing contract.
 - [x] Structured config
 - [ ] Metrics and tracing
 - [ ] Threat model documentation
-- [ ] Release freeze script
+- [x] Release v0.1.0 checklist
 
 ---
 

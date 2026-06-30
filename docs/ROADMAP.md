@@ -30,4 +30,4 @@
 - [x] log compaction planning contract
 - [ ] tracing
 - [ ] metrics
-- [ ] release checklist
+- [x] release checklist
