@@ -25,13 +25,13 @@ Black Swan currently includes:
 - Deterministic state reducer
 - Raft role/log scaffold
 - Coordinator daemon prototype
+- Local signed-packet demo example
 
 Planned next:
 
 - Monotonic WAL index and term handling
 - HashSet-based replay registry
 - Integration tests
-- Local demo extraction
 - AppendEntries RPC scaffold
 - Snapshot and log compaction
 
@@ -67,7 +67,7 @@ crates/transport   Tokio TCP framed packet transport
 crates/storage     append-only WAL and replay
 crates/consensus   Raft role/log scaffold
 crates/scheduler   execution scheduling contracts
-apps/coordinator   runtime daemon and local prototype harness
+apps/coordinator   runtime daemon and local signed-packet demo
 ```
 
 ---
@@ -89,12 +89,25 @@ Black Swan experiments with a stricter flow:
 
 ## Running Locally
 
+Build the workspace:
+
 ```bash
 cargo build
+```
+
+Run the coordinator daemon:
+
+```bash
 cargo run -p black_swan_coordinator
 ```
 
-The current coordinator contains a local signed-packet harness that starts a listener, registers a test identity, signs a command, sends it over TCP, writes it to the WAL, and applies it to state.
+Run the local signed-packet demo:
+
+```bash
+cargo run -p black_swan_coordinator --example local_signed_packet_demo
+```
+
+The demo starts a listener, registers a test identity, signs a command, sends it over TCP, writes it to the WAL, and applies it to state.
 
 ---
 
@@ -106,7 +119,7 @@ The current coordinator contains a local signed-packet harness that starts a lis
 - [ ] Add TTL/window cleanup for replay protection
 - [ ] Add monotonic WAL index
 - [ ] Add real consensus term source
-- [ ] Move local packet test harness into `examples/`
+- [x] Move local packet test harness into `examples/`
 - [ ] Add integration tests for trust gate and WAL replay
 
 ### Phase 2 - Replication
@@ -133,7 +146,6 @@ The current coordinator contains a local signed-packet harness that starts a lis
 - Add expired timestamp test
 - Add bad signature test
 - Add unauthorized capability test
-- Move local signed-packet harness from `main.rs` to `examples/`
 
 ---
 
