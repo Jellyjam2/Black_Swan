@@ -18,11 +18,11 @@
 
 ## Phase 3 - Consensus
 
-- [ ] AppendEntries request/response types
+- [x] AppendEntries request/response types
 - [ ] leader heartbeat
 - [ ] follower replication
 - [ ] commit index advancement
-- [ ] log consistency checks
+- [x] follower log consistency checks
 
 ## Phase 4 - Production Shape
 

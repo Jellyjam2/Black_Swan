@@ -30,7 +30,7 @@ Black Swan currently includes:
 Planned next:
 
 - Consensus-backed term handling
-- AppendEntries RPC scaffold
+- Leader heartbeat and transport wiring
 - Snapshot and log compaction
 
 ---
@@ -143,10 +143,10 @@ See `docs/TESTING.md` for the full testing contract.
 
 ### Phase 2 - Replication
 
-- [ ] AppendEntries RPC types
+- [x] AppendEntries RPC types
 - [ ] Leader-to-follower replication path
 - [ ] Commit index advancement
-- [ ] Follower replay consistency checks
+- [x] Follower log consistency checks
 
 ### Phase 3 - Production Shape
 

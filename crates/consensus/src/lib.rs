@@ -26,6 +26,28 @@ pub struct RaftLogEntry {
 }
 
 // ------------------------------------------------------------------
+// APPENDENTRIES RPC CONTRACT
+// ------------------------------------------------------------------
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AppendEntriesRequest {
+    pub term: u64,
+    pub leader_id: String,
+    pub prev_log_index: usize,
+    pub prev_log_term: u64,
+    pub entries: Vec<RaftLogEntry>,
+    pub leader_commit: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AppendEntriesResponse {
+    pub term: u64,
+    pub success: bool,
+    pub match_index: usize,
+    pub rejection_reason: Option<String>,
+}
+
+// ------------------------------------------------------------------
 // CONSENSUS STATUS SNAPSHOT
 // ------------------------------------------------------------------
 
@@ -44,6 +66,8 @@ pub trait RaftConsensusController: Send + Sync {
     async fn propose_entry(&mut self, cmd: LogCommand) -> Result<usize, String>;
 
     async fn step_heartbeat_clock(&mut self) -> Result<(), String>;
+
+    fn append_entries(&mut self, request: AppendEntriesRequest) -> AppendEntriesResponse;
 
     fn get_status(&self) -> ConsensusStatus;
 
@@ -86,6 +110,83 @@ impl ActiveRaftEngine {
             peer_count,
         }
     }
+
+    pub fn last_log_index(&self) -> usize {
+        self.log.last().map(|entry| entry.index).unwrap_or(0)
+    }
+
+    pub fn last_log_term(&self) -> u64 {
+        self.log.last().map(|entry| entry.term).unwrap_or(0)
+    }
+
+    fn rejection(&self, match_index: usize, reason: &str) -> AppendEntriesResponse {
+        AppendEntriesResponse {
+            term: self.current_term,
+            success: false,
+            match_index,
+            rejection_reason: Some(reason.to_string()),
+        }
+    }
+
+    pub fn handle_append_entries(
+        &mut self,
+        request: AppendEntriesRequest,
+    ) -> AppendEntriesResponse {
+        if request.term < self.current_term {
+            return self.rejection(self.last_log_index(), "STALE_TERM");
+        }
+
+        if request.term > self.current_term {
+            self.current_term = request.term;
+            self.role = RaftRole::Follower;
+        }
+
+        if self.role != RaftRole::Follower {
+            self.role = RaftRole::Follower;
+        }
+
+        if request.prev_log_index >= self.log.len() {
+            return self.rejection(self.last_log_index(), "MISSING_PREV_LOG_INDEX");
+        }
+
+        let previous_entry = &self.log[request.prev_log_index];
+
+        if previous_entry.term != request.prev_log_term {
+            return self.rejection(request.prev_log_index, "PREV_LOG_TERM_MISMATCH");
+        }
+
+        let mut expected_index = request.prev_log_index + 1;
+
+        for entry in request.entries {
+            if entry.index != expected_index {
+                return self.rejection(self.last_log_index(), "NON_CONTIGUOUS_APPEND");
+            }
+
+            if entry.index < self.log.len() {
+                if self.log[entry.index].term != entry.term {
+                    self.log.truncate(entry.index);
+                    self.log.push(entry);
+                }
+            } else if entry.index == self.log.len() {
+                self.log.push(entry);
+            } else {
+                return self.rejection(self.last_log_index(), "LOG_GAP");
+            }
+
+            expected_index += 1;
+        }
+
+        if request.leader_commit > self.commit_index {
+            self.commit_index = request.leader_commit.min(self.last_log_index());
+        }
+
+        AppendEntriesResponse {
+            term: self.current_term,
+            success: true,
+            match_index: self.last_log_index(),
+            rejection_reason: None,
+        }
+    }
 }
 
 // ------------------------------------------------------------------
@@ -125,6 +226,10 @@ impl RaftConsensusController for ActiveRaftEngine {
         Ok(())
     }
 
+    fn append_entries(&mut self, request: AppendEntriesRequest) -> AppendEntriesResponse {
+        self.handle_append_entries(request)
+    }
+
     fn get_status(&self) -> ConsensusStatus {
         ConsensusStatus {
             current_term: self.current_term,
@@ -135,5 +240,62 @@ impl RaftConsensusController for ActiveRaftEngine {
 
     fn get_log_len(&self) -> usize {
         self.log.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn submit_graph(graph_id: &str) -> LogCommand {
+        LogCommand::SubmitGraph {
+            graph_id: graph_id.to_string(),
+            payload: "{\"nodes\":[]}".to_string(),
+        }
+    }
+
+    #[test]
+    fn append_entries_accepts_matching_previous_log() {
+        let mut engine = ActiveRaftEngine::new(1, 1);
+
+        let request = AppendEntriesRequest {
+            term: 1,
+            leader_id: "leader_a".to_string(),
+            prev_log_index: 0,
+            prev_log_term: 0,
+            entries: vec![RaftLogEntry {
+                term: 1,
+                index: 1,
+                command: submit_graph("graph_a"),
+            }],
+            leader_commit: 1,
+        };
+
+        let response = engine.handle_append_entries(request);
+
+        assert!(response.success);
+        assert_eq!(response.match_index, 1);
+        assert_eq!(engine.commit_index, 1);
+        assert_eq!(engine.log.len(), 2);
+    }
+
+    #[test]
+    fn append_entries_rejects_stale_term() {
+        let mut engine = ActiveRaftEngine::new(5, 1);
+
+        let request = AppendEntriesRequest {
+            term: 4,
+            leader_id: "leader_old".to_string(),
+            prev_log_index: 0,
+            prev_log_term: 0,
+            entries: vec![],
+            leader_commit: 0,
+        };
+
+        let response = engine.handle_append_entries(request);
+
+        assert!(!response.success);
+        assert_eq!(response.term, 5);
+        assert_eq!(response.rejection_reason.as_deref(), Some("STALE_TERM"));
     }
 }
